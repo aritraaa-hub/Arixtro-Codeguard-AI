@@ -31,9 +31,8 @@ def analyze_c_code(source_code):
     if malloc_count > free_count: issues.append("Memory Leak Warning: Missing 'free()' call.")
     return {"language": "C", "detected_warnings": issues}
 
-# ২. Hugging Face API ক্লায়েন্ট সেটআপ (ফ্রি)
+# ২. Hugging Face API ক্লায়েন্ট (Auto-Fallback System)
 HF_TOKEN = os.environ.get("HF_TOKEN") 
-client = InferenceClient(model="HuggingFaceH4/zephyr-7b-beta", token=HF_TOKEN)
 
 def ai_auto_fix(source_code, static_report):
     if not static_report["detected_warnings"]:
@@ -49,22 +48,38 @@ def ai_auto_fix(source_code, static_report):
     
     messages = [{"role": "system", "content": "You are Arixtro Codegaurd AI."}, {"role": "user", "content": prompt}]
     
-    try:
-        response = client.chat_completion(messages, max_tokens=512, temperature=0.2)
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"⚠️ API Connection Error: Please check if the HF_TOKEN is valid. Details: {str(e)}"
+    # ব্যাকআপ সিস্টেম: প্রথমটা ফেইল করলে দ্বিতীয়টা ট্রাই করবে
+    models_to_try = [
+        "mistralai/Mistral-7B-Instruct-v0.3",
+        "HuggingFaceH4/zephyr-7b-beta"
+    ]
+    
+    last_error = ""
+    for model_name in models_to_try:
+        try:
+            client = InferenceClient(model=model_name, token=HF_TOKEN)
+            response = client.chat_completion(messages, max_tokens=512, temperature=0.2)
+            return f"*(Fixed by AI Engine)*\n\n" + response.choices[0].message.content
+        except Exception as e:
+            last_error = str(e)
+            continue
+            
+    return f"⚠️ API Error: HF free models are currently not responding. Details: {last_error}"
 
 def code_guard_ui(source_code):
     if not source_code.strip():
         return "⚠️ Please enter some code.", ""
+    
+    # স্ট্যাটিক অ্যানালাইজার দিয়ে কোড চেক করা
     static_report = analyze_c_code(source_code)
+    
     if static_report["detected_warnings"]:
         warnings_str = "\n".join([f"* 🚨 **{w}**" for w in static_report["detected_warnings"]])
         report_text = f"### 🔍 Static Analysis Found {len(static_report['detected_warnings'])} Issues:\n\n{warnings_str}"
     else:
         report_text = "### ✅ No Static Issues Found."
     
+    # এআই-কে দিয়ে ফিক্স করানো
     ai_response = ai_auto_fix(source_code, static_report)
     return report_text, ai_response
 
