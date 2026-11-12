@@ -1,7 +1,7 @@
 import gradio as gr
 import re
 import os
-import google.generativeai as genai
+import requests
 
 # ১. C কোড স্ট্যাটিক অ্যানালাইজার
 def analyze_c_code(source_code):
@@ -31,10 +31,8 @@ def analyze_c_code(source_code):
     if malloc_count > free_count: issues.append("Memory Leak Warning: Missing 'free()' call.")
     return {"language": "C", "detected_warnings": issues}
 
-# ২. Google Gemini API (Auto-Selector System)
+# ২. Google Gemini ডাইরেক্ট API (No Libraries Needed)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
 
 def ai_auto_fix(source_code, static_report):
     if not static_report["detected_warnings"]:
@@ -51,26 +49,30 @@ def ai_auto_fix(source_code, static_report):
         "Tasks:\n1. Explain the danger briefly.\n2. Provide the completely fixed, memory-safe, and optimized C code.\n"
     )
     
-    # গুগলের সব মডেলের লিস্ট - যেটা কাজ করবে সেটা দিয়েই রেজাল্ট দেবে
-    models_to_try = [
-        'gemini-1.5-flash-latest', 
-        'gemini-pro', 
-        'gemini-1.5-pro', 
-        'gemini-1.5-flash'
-    ]
+    # সরাসরি গুগলের মূল সার্ভারে রিকোয়েস্ট (1.5-flash)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {'Content-Type': 'application/json'}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    last_error = ""
-    for m_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(m_name)
-            response = model.generate_content(prompt)
-            if response.text:
-                return f"*(Fixed by Arixtro AI Engine)*\n\n" + response.text
-        except Exception as e:
-            last_error = str(e)
-            continue
-            
-    return f"⚠️ API Error: None of the models worked. Details: {last_error}"
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        result = response.json()
+        
+        if "candidates" in result:
+            return "*(Fixed by Arixtro AI Engine powered by Gemini)*\n\n" + result["candidates"][0]["content"]["parts"][0]["text"]
+        elif "error" in result:
+            # যদি প্রথমটাতে কোনো সমস্যা হয়, অটোমেটিক দ্বিতীয় ব্যাকআপ সার্ভারে (gemini-pro) ট্রাই করবে
+            url_fallback = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+            resp_fallback = requests.post(url_fallback, headers=headers, json=data).json()
+            if "candidates" in resp_fallback:
+                return "*(Fixed by Arixtro AI Engine - Backup Mode)*\n\n" + resp_fallback["candidates"][0]["content"]["parts"][0]["text"]
+            elif "error" in resp_fallback:
+                 return f"⚠️ Google API Error: {resp_fallback['error'].get('message', 'Unknown Error')}"
+            return f"⚠️ Fallback Error: {str(resp_fallback)}"
+        else:
+            return f"⚠️ Unexpected Response: {str(result)}"
+    except Exception as e:
+        return f"⚠️ Server Connection Error: {str(e)}"
 
 def code_guard_ui(source_code):
     if not source_code.strip():
