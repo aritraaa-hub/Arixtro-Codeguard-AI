@@ -1,9 +1,9 @@
 import gradio as gr
 import re
 import os
-import requests
+import google.generativeai as genai
 
-# ১. C কোড স্ট্যাটিক অ্যানালাইজার
+# ১. C কোড স্ট্যাটিক অ্যানালাইজার (আপনার অরিজিনাল কোড)
 def analyze_c_code(source_code):
     lines = source_code.split('\n')
     issues = []
@@ -31,50 +31,33 @@ def analyze_c_code(source_code):
     if malloc_count > free_count: issues.append("Memory Leak Warning: Missing 'free()' call.")
     return {"language": "C", "detected_warnings": issues}
 
-# ২. ডাইরেক্ট API কল (Router Bypass Method)
-HF_TOKEN = os.environ.get("HF_TOKEN")
+# ২. Google Gemini API সেটআপ
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 def ai_auto_fix(source_code, static_report):
     if not static_report["detected_warnings"]:
         return "✅ No static issues found. The code seems structurally safe!"
         
+    if not GEMINI_API_KEY:
+        return "⚠️ API Key missing! Please add GEMINI_API_KEY in Render Environment Variables."
+        
     issues_list = "\n".join(static_report["detected_warnings"])
     prompt = (
         "You are Arixtro Codegaurd AI, an expert software security assistant.\n"
         f"Analyze this {static_report['language']} code:\n\n```c\n{source_code.strip()}\n```\n\n"
-        f"Warnings:\n{issues_list}\n\n"
-        "Tasks:\n1. Explain the danger.\n2. Provide the fixed memory-safe code.\n"
+        f"Warnings detected by static analysis:\n{issues_list}\n\n"
+        "Tasks:\n1. Explain the danger of these issues briefly.\n2. Provide the completely fixed, memory-safe, and optimized C code.\n"
     )
     
-    # Qwen মডেলের জন্য ম্যানুয়াল প্রম্পট ফরম্যাটিং
-    formatted_prompt = f"<|im_start|>system\nYou are Arixtro Codegaurd AI.<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-    
-    # Hugging Face-এর ক্লাসিক ফ্রি API লিঙ্ক (এখানে কোনো প্রোভাইডার লাগে না)
-    API_URL = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-Coder-1.5B-Instruct"
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {
-        "inputs": formatted_prompt,
-        "parameters": {"max_new_tokens": 512, "temperature": 0.2, "return_full_text": False}
-    }
-    
     try:
-        response = requests.post(API_URL, headers=headers, json=payload)
-        result = response.json()
-        
-        # রেজাল্ট ঠিকমতো এলে:
-        if isinstance(result, list) and "generated_text" in result[0]:
-            return "*(Fixed by Arixtro AI Engine)*\n\n" + result[0]["generated_text"]
-            
-        # মডেল যদি স্লিপ মোডে থাকে (ফ্রি সার্ভারের নিয়ম):
-        elif isinstance(result, dict) and "error" in result:
-            if "estimated_time" in result:
-                wait_time = int(result['estimated_time'])
-                return f"⏳ AI is waking up! Please wait {wait_time} seconds and click 'Analyze & Fix Code' again."
-            return f"⚠️ API Error: {result['error']}"
-        else:
-            return f"⚠️ Unexpected API Response: {str(result)}"
+        # Gemini 1.5 Flash অত্যন্ত ফাস্ট এবং লাইটওয়েট
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        return "*(Fixed by Arixtro AI Engine powered by Gemini)*\n\n" + response.text
     except Exception as e:
-        return f"⚠️ Connection Error: {str(e)}"
+        return f"⚠️ API Error: {str(e)}"
 
 def code_guard_ui(source_code):
     if not source_code.strip():
@@ -109,6 +92,5 @@ with gr.Blocks(theme=gr.themes.Monochrome(), title="Arixtro Codegaurd AI") as de
             
     analyze_btn.click(fn=code_guard_ui, inputs=input_code, outputs=[output_report, output_fix])
 
-# Render বা অন্য সার্ভারের জন্য হোস্ট কনফিগারেশন
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
