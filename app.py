@@ -3,7 +3,7 @@ import re
 import os
 import google.generativeai as genai
 
-# ১. C কোড স্ট্যাটিক অ্যানালাইজার (আপনার অরিজিনাল কোড)
+# ১. C কোড স্ট্যাটিক অ্যানালাইজার
 def analyze_c_code(source_code):
     lines = source_code.split('\n')
     issues = []
@@ -31,7 +31,7 @@ def analyze_c_code(source_code):
     if malloc_count > free_count: issues.append("Memory Leak Warning: Missing 'free()' call.")
     return {"language": "C", "detected_warnings": issues}
 
-# ২. Google Gemini API সেটআপ
+# ২. Google Gemini API (Auto-Selector System)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -47,17 +47,30 @@ def ai_auto_fix(source_code, static_report):
     prompt = (
         "You are Arixtro Codegaurd AI, an expert software security assistant.\n"
         f"Analyze this {static_report['language']} code:\n\n```c\n{source_code.strip()}\n```\n\n"
-        f"Warnings detected by static analysis:\n{issues_list}\n\n"
-        "Tasks:\n1. Explain the danger of these issues briefly.\n2. Provide the completely fixed, memory-safe, and optimized C code.\n"
+        f"Warnings detected:\n{issues_list}\n\n"
+        "Tasks:\n1. Explain the danger briefly.\n2. Provide the completely fixed, memory-safe, and optimized C code.\n"
     )
     
-    try:
-        # Gemini 1.5 Flash অত্যন্ত ফাস্ট এবং লাইটওয়েট
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        return "*(Fixed by Arixtro AI Engine powered by Gemini)*\n\n" + response.text
-    except Exception as e:
-        return f"⚠️ API Error: {str(e)}"
+    # গুগলের সব মডেলের লিস্ট - যেটা কাজ করবে সেটা দিয়েই রেজাল্ট দেবে
+    models_to_try = [
+        'gemini-1.5-flash-latest', 
+        'gemini-pro', 
+        'gemini-1.5-pro', 
+        'gemini-1.5-flash'
+    ]
+    
+    last_error = ""
+    for m_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(m_name)
+            response = model.generate_content(prompt)
+            if response.text:
+                return f"*(Fixed by Arixtro AI Engine)*\n\n" + response.text
+        except Exception as e:
+            last_error = str(e)
+            continue
+            
+    return f"⚠️ API Error: None of the models worked. Details: {last_error}"
 
 def code_guard_ui(source_code):
     if not source_code.strip():
