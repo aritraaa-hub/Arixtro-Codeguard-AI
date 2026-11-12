@@ -33,7 +33,7 @@ def analyze_c_code(source_code):
 
 # ২. Hugging Face API ক্লায়েন্ট সেটআপ (ফ্রি)
 HF_TOKEN = os.environ.get("HF_TOKEN") 
-client = InferenceClient(model="Qwen/Qwen2.5-Coder-1.5B-Instruct", token=HF_TOKEN)
+client = InferenceClient(model="HuggingFaceH4/zephyr-7b-beta", token=HF_TOKEN)
 
 def ai_auto_fix(source_code, static_report):
     if not static_report["detected_warnings"]:
