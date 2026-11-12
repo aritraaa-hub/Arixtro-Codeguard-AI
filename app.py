@@ -1,7 +1,7 @@
 import gradio as gr
 import re
 import os
-from huggingface_hub import InferenceClient
+import requests
 
 # ১. C কোড স্ট্যাটিক অ্যানালাইজার
 def analyze_c_code(source_code):
@@ -31,8 +31,8 @@ def analyze_c_code(source_code):
     if malloc_count > free_count: issues.append("Memory Leak Warning: Missing 'free()' call.")
     return {"language": "C", "detected_warnings": issues}
 
-# ২. Hugging Face API ক্লায়েন্ট (Auto-Fallback System)
-HF_TOKEN = os.environ.get("HF_TOKEN") 
+# ২. ডাইরেক্ট API কল (Router Bypass Method)
+HF_TOKEN = os.environ.get("HF_TOKEN")
 
 def ai_auto_fix(source_code, static_report):
     if not static_report["detected_warnings"]:
@@ -46,31 +46,40 @@ def ai_auto_fix(source_code, static_report):
         "Tasks:\n1. Explain the danger.\n2. Provide the fixed memory-safe code.\n"
     )
     
-    messages = [{"role": "system", "content": "You are Arixtro Codegaurd AI."}, {"role": "user", "content": prompt}]
+    # Qwen মডেলের জন্য ম্যানুয়াল প্রম্পট ফরম্যাটিং
+    formatted_prompt = f"<|im_start|>system\nYou are Arixtro Codegaurd AI.<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
     
-    # ব্যাকআপ সিস্টেম: প্রথমটা ফেইল করলে দ্বিতীয়টা ট্রাই করবে
-    models_to_try = [
-        "mistralai/Mistral-7B-Instruct-v0.3",
-        "HuggingFaceH4/zephyr-7b-beta"
-    ]
+    # Hugging Face-এর ক্লাসিক ফ্রি API লিঙ্ক (এখানে কোনো প্রোভাইডার লাগে না)
+    API_URL = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-Coder-1.5B-Instruct"
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    payload = {
+        "inputs": formatted_prompt,
+        "parameters": {"max_new_tokens": 512, "temperature": 0.2, "return_full_text": False}
+    }
     
-    last_error = ""
-    for model_name in models_to_try:
-        try:
-            client = InferenceClient(model=model_name, token=HF_TOKEN)
-            response = client.chat_completion(messages, max_tokens=512, temperature=0.2)
-            return f"*(Fixed by AI Engine)*\n\n" + response.choices[0].message.content
-        except Exception as e:
-            last_error = str(e)
-            continue
+    try:
+        response = requests.post(API_URL, headers=headers, json=payload)
+        result = response.json()
+        
+        # রেজাল্ট ঠিকমতো এলে:
+        if isinstance(result, list) and "generated_text" in result[0]:
+            return "*(Fixed by Arixtro AI Engine)*\n\n" + result[0]["generated_text"]
             
-    return f"⚠️ API Error: HF free models are currently not responding. Details: {last_error}"
+        # মডেল যদি স্লিপ মোডে থাকে (ফ্রি সার্ভারের নিয়ম):
+        elif isinstance(result, dict) and "error" in result:
+            if "estimated_time" in result:
+                wait_time = int(result['estimated_time'])
+                return f"⏳ AI is waking up! Please wait {wait_time} seconds and click 'Analyze & Fix Code' again."
+            return f"⚠️ API Error: {result['error']}"
+        else:
+            return f"⚠️ Unexpected API Response: {str(result)}"
+    except Exception as e:
+        return f"⚠️ Connection Error: {str(e)}"
 
 def code_guard_ui(source_code):
     if not source_code.strip():
         return "⚠️ Please enter some code.", ""
     
-    # স্ট্যাটিক অ্যানালাইজার দিয়ে কোড চেক করা
     static_report = analyze_c_code(source_code)
     
     if static_report["detected_warnings"]:
@@ -79,11 +88,10 @@ def code_guard_ui(source_code):
     else:
         report_text = "### ✅ No Static Issues Found."
     
-    # এআই-কে দিয়ে ফিক্স করানো
     ai_response = ai_auto_fix(source_code, static_report)
     return report_text, ai_response
 
-# ৩. Arixtro ব্র্যান্ডিং করা UI লেআউট (ইন্টারফেস)
+# ৩. Arixtro ব্র্যান্ডিং করা UI লেআউট
 sample_code = """#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\nint main() {\n    char buffer[10];\n    int *ptr;\n    int *arr = (int*)malloc(5 * sizeof(int));\n    gets(buffer);\n    strcpy(buffer, "Hello");\n    for(int i = 0; i < 5; i++) {\n        for(int j = 0; j < 5; j++) {\n            arr[i] = i + j;\n        }\n    }\n    return 0;\n}"""
 
 with gr.Blocks(theme=gr.themes.Monochrome(), title="Arixtro Codegaurd AI") as demo:
