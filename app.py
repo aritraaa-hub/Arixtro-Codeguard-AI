@@ -31,7 +31,7 @@ def analyze_c_code(source_code):
     if malloc_count > free_count: issues.append("Memory Leak Warning: Missing 'free()' call.")
     return {"language": "C", "detected_warnings": issues}
 
-# ২. Google Gemini API (Dynamic Auto-Discovery System)
+# ২. Google Gemini API (Latest 2026 Model)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -52,34 +52,12 @@ def ai_auto_fix(source_code, static_report):
     )
     
     try:
-        # গুগলের সার্ভার থেকে সরাসরি অ্যাভেইলেবল মডেলের লিস্ট বের করা
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-        
-        if not available_models:
-            return "⚠️ API Error: Your API key does not have access to any text models."
-            
-        # সবচেয়ে ভালো মডেলটি সিলেক্ট করা (Flash বা Pro)
-        chosen_model = available_models[0]
-        for m_name in available_models:
-            if 'gemini-1.5-flash' in m_name:
-                chosen_model = m_name
-                break
-            elif 'gemini-1.5-pro' in m_name:
-                chosen_model = m_name
-                
-        # সিলেক্ট করা মডেল দিয়ে কোড ফিক্স করা
-        model = genai.GenerativeModel(chosen_model)
+        # গুগলের সাজেস্ট করা লেটেস্ট মডেল (gemini-3.8-flash) সরাসরি ব্যবহার
+        model = genai.GenerativeModel('gemini-3.8-flash')
         response = model.generate_content(prompt)
-        
-        # মডেলের নামসহ রেজাল্ট দেখানো
-        model_display_name = chosen_model.replace("models/", "")
-        return f"*(Fixed by Arixtro AI Engine powered by {model_display_name})*\n\n" + response.text
-        
+        return "*(Fixed by Arixtro AI Engine powered by Gemini 3.8 Flash)*\n\n" + response.text
     except Exception as e:
-        return f"⚠️ Google API Critical Error: {str(e)}"
+        return f"⚠️ Google API Error: {str(e)}"
 
 def code_guard_ui(source_code):
     if not source_code.strip():
